@@ -1,3 +1,6 @@
+<img width="256" height="256" alt="logo" src="https://github.com/user-attachments/assets/06a9ad61-79a6-4bdb-bfb1-17b3e148fe60" />
+
+
 # Development Build & Deploy Tool
 This tool automates the process of building and deploying your **Advanced Web Tools** package (plugins, themes, or systems) from your local development environment to a remote server. It packages your project into a zip file and can push it to a running instance for rapid testing.
 ## Features
