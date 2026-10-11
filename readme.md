@@ -1,94 +1,75 @@
 <img width="256" height="256" alt="logo" src="https://github.com/user-attachments/assets/06a9ad61-79a6-4bdb-bfb1-17b3e148fe60" />
 
+# URPC
+### Universal Rendering Pipeline Controller
 
-# Development Build & Deploy Tool
-This tool automates the process of building and deploying your **Advanced Web Tools** package (plugins, themes, or systems) from your local development environment to a remote server. It packages your project into a zip file and can push it to a running instance for rapid testing.
-## Features
-- **Automated Packaging**: Creates a zip archive of your project based on your `manifest.json`.
-- **Remote Installation**: Deploys the package to a remote server for instant testing.
-- **Fast Build Mode**: Uses a caching system to package only the files that have changed, significantly speeding up the build process.
-- **Flexible Configuration**: Customize build paths, naming conventions, and remote server details.
+**One rendering pipeline. Connected themes, editors, and packages.**
 
-## Prerequisites
-- PHP installed on your system.
-- The `php-curl` extension must be enabled for remote installation.
-- The `php-zip` extension must be enabled for packaging.
+URPC brings structured content and extensible rendering together for **Advanced Web Tools**. It gives theme engines, visual editors, and other packages a common document model—so they can work together without depending on each other's internal implementation.
 
-## Setup & Configuration
-All configuration is handled in the file in your project's root. `build/dev_env.json`
-``` json
-{
-  "release_folder": "releases",
-  "build_save_format": "<name>-<version>",
-  "address": "http://localhost:3000",
-  "remote_install_path": "/dev/install",
-  "devSecret": "12345678"
-}
-```
-#### Configuration Options:
+Build the experience your way. Let a provider compose the page, let an editor customize its content, and let dynamic blocks adapt it to the current request. URPC turns the resulting document into server-rendered HTML.
 
-| Key | Description |
-| --- | --- |
-| `release_folder` | The directory where your packaged `.zip` files will be saved. |
-| `build_save_format` | A template for your zip file's name. Supported placeholders: `<name>`, `<version>`, `<description>`, `<author>`, `<license>`. These are pulled from your `manifest.json`. |
-| `address` | The base URL of your remote test server (e.g., `http://my-test-site.com`). |
-| `remote_install_path` | The specific endpoint on the remote server that handles the package installation (e.g., `/dev/install`). |
-| `devSecret` | A secret key that must match the one on your remote server to authorize the installation. |
-## Usage
-Use the (Windows) or (Linux/macOS) scripts from your project's root directory to run the tool. `build.bat` `build.sh`
-### Windows
-``` bash
-build.bat [options]
-```
-### Linux / macOS
-First, make the script executable:
-``` bash
+[Explore the developer documentation](URPC/readme.md)
+
+## Built to connect your ecosystem
+
+### Themes with freedom
+
+A theme engine can provide a complete document and layout. Theme developers can use that document as it is, or customize it through a dedicated hook before rendering. URPC remains independent of the engine supplying it.
+
+### Editors that work alongside themes
+
+A before-render event exposes the prepared document with its generated block identifiers. Editors and integration packages can apply saved changes or replace the document before HTML is produced.
+
+### Dynamic content, shared structure
+
+Package-defined processors can update block text, attributes, and children using their own logic and the controller's context. The final structure passes through the same HTML renderer.
+
+### AWT integration from the start
+
+URPC extends the AWT controller, making it usable in the existing request lifecycle. Document providers can be connected through AWT shared resources by the package integrating them.
+
+## What you get
+
+- **Composable documents:** organize blocks into sections and nested structures.
+- **Flexible document providers:** supply a document from another package or pass one directly.
+- **Optional theme customization:** adjust the document without rebuilding the rendering pipeline.
+- **Editor integration:** apply overrides through the before-render event.
+- **Automatic block identifiers:** identify source structures without manually assigning every block an ID.
+- **Extensible dynamic blocks:** use PHP processors for request-specific content and structure.
+- **Server-rendered HTML:** recursively render blocks with escaped text and attribute values.
+
+## From content to page
+
+A provider supplies the document. Optional theme customization prepares it. URPC assigns block identifiers, exposes the document to integration listeners, processes dynamic blocks, and renders the HTML.
+
+Each package owns its part of the experience. URPC provides the pipeline that brings those parts together.
+
+## Developer documentation
+
+For setup, JSON formats, document providers, customization hooks, events, dynamic processors, and examples, see **[URPC/readme.md](URPC/readme.md)**.
+
+## Build & Deploy
+
+The included development scripts package URPC and can deploy it to an AWT test instance.
+
+**Requirements:** PHP with `php-zip`; `php-curl` for remote deployment. Configure the destination and matching development secret in `build/dev_env.json`.
+
+**Linux / macOS**
+
+```bash
 chmod +x build.sh
+./build.sh                  # Build, then prompt for installation
+./build.sh --install        # Build and deploy
+./build.sh --fast --install # Build changed files and deploy
 ```
-Then, run it:
-``` bash
-./build.sh [options]
-```
-### Command-Line Options
-You can pass the following options to the build scripts:
-- `--install`: Automatically installs the package on the remote server after building. Without this flag, the script will only build the package and then ask for confirmation before installing.
-- `--fast`: Enables "Fast Build" mode. In this mode, the script only includes files that have been modified since the last build, making the process much quicker.
 
-### Examples
-**1. Build the package only:**
-``` bash
-# Windows
+**Windows**
+
+```bat
 build.bat
-
-# Linux / macOS
-./build.sh
-```
-**2. Build the package and automatically install it:**
-``` bash
-# Windows
 build.bat --install
-
-# Linux / macOS
-./build.sh --install
-```
-**3. Perform a fast build and install it:**
-``` bash
-# Windows
 build.bat --fast --install
-
-# Linux / macOS
-./build.sh --fast --install
 ```
-## How "Fast Build" Works
-When you use the `--fast` flag, the script creates a cache file at `build/.file_cache.json`. This file stores a hash of each file included in the zip. On subsequent fast builds, the script checks each file against its cached hash. If the file hasn't changed, it's skipped. If it has changed (or is new), it's included in the package and its new hash is saved.
-To force a full rebuild, you can simply delete the `build/.file_cache.json` file.
-## Enabling Remote Installation (Server-Side)
 
-> **SECURITY WARNING**: This feature is for development purposes only. Ensure it is disabled in any production environment to prevent unauthorized code execution.
->
-
-To allow the script to install packages, you must configure your remote server:
-1. Open your server's `awt_config.php` file.
-2. Set `DEBUG` and `REMOTE_INSTALL_FOR_DEVS` to `true`.
-3. Ensure the `dev_secret` in `awt_config.php` matches the `devSecret` in your local file. `build/dev_env.json`
-
+Remote deployment requires `DEBUG` and `REMOTE_INSTALL_FOR_DEVS` enabled on the test server, with matching local `devSecret` and server `dev_secret`. Enable remote installation only in a development environment.
