@@ -1,4 +1,4 @@
-name: Framework release
+name: URPC release
 
 on:
   push:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: framework-release
+  group: urpc-release
   cancel-in-progress: false
 
 jobs:
@@ -61,5 +61,5 @@ jobs:
           gh release create "$VERSION" \
             "$RUNNER_TEMP/URPC.zip" \
             --target "$GITHUB_SHA" \
-            --title "AWT Framework $VERSION" \
+            --title "URPC - $VERSION" \
             --generate-notes
