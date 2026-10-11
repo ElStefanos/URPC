@@ -1,4 +1,11 @@
 <?php
+/*
+ * Copyright (c) 2026 Stefan Crkvenjakov.
+ * Part of the URPC project.
+ * Github: https://github.com/ElStefanos/URPC
+ * File: URPCBlock.php
+ */
+
 namespace URPC\api;
 
 use URPC\api\contracts\IURPCBlock;

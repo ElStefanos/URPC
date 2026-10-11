@@ -1,4 +1,10 @@
 <?php
+/*
+ * Copyright (c) 2026 Stefan Crkvenjakov.
+ * Part of the URPC project.
+ * Github: https://github.com/ElStefanos/URPC
+ * File: BeforeRenderEvent.php
+ */
 
 namespace URPC\api\events;
 

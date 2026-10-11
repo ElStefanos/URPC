@@ -1,4 +1,11 @@
 <?php
+/*
+ * Copyright (c) 2026 Stefan Crkvenjakov.
+ * Part of the URPC project.
+ * Github: https://github.com/ElStefanos/URPC
+ * File: GreetingProcessor.php
+ */
+
 namespace MyTheme;
 
 use URPC\api\contracts\IURPCBlock;

@@ -1,4 +1,11 @@
 <?php
+/*
+ * Copyright (c) 2026 Stefan Crkvenjakov.
+ * Part of the URPC project.
+ * Github: https://github.com/ElStefanos/URPC
+ * File: usage.php
+ */
+
 // Run inside AWT; make the example MyTheme classes autoloadable first.
 use URPC\api\URPCDocument;
 use URPC\api\events\BeforeRenderEvent;
