@@ -1,0 +1,22 @@
+{
+  "blocks": [
+    {
+      "descriptor": {"name": "header"},
+      "attributes": {"class": "site-header"},
+      "children": [
+        {
+          "descriptor": {"name": "h1"},
+          "content": "My website"
+        },
+        {
+          "descriptor": {
+            "name": "p",
+            "renderer": "MyTheme\\GreetingProcessor",
+            "props": {"greeting": "Welcome"}
+          },
+          "content": "Fallback greeting"
+        }
+      ]
+    }
+  ]
+}

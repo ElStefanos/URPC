@@ -1,0 +1,15 @@
+{
+  "name": "URPC",
+  "version": "1.0.0",
+  "minimum_awt_version": "27.0.0",
+  "maximum_awt_version": null,
+  "author": "ElStefanos",
+  "type": 1,
+  "system_package": 1,
+  "description": "URPC (Universal Rendering Pipeline Controller) defines shared block formats, rendering rules, and contracts for CMS packages. These standards apply only to public-facing output, leaving each package free to implement its own administration interface and workflows.",
+  "icon": "icon.png",
+  "preview_image": "preview/image.png",
+  "license": null,
+  "license_url": null,
+  "dependencies": []
+}

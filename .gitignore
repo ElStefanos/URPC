@@ -1,0 +1,5 @@
+.awt/
+build/dev_env.json
+build/.file_cache.json
+releases/
+.idea/
