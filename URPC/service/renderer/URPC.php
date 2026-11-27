@@ -9,6 +9,7 @@
 namespace URPC\service\renderer;
 
 use controller\Controller;
+use URPC\service\contracts\provider\ICacheableURPCDocumentProvider;
 use URPC\service\contracts\provider\IURPCDocumentProvider;
 use object\ObjectFactory;
 use URPC\api\contracts\IURPCBlock;
@@ -25,6 +26,7 @@ class URPC extends Controller implements IURPCRenderer
     private ?IURPCDocument $renderedDocument = null;
     private string $sourceNamespace = '';
     private ?string $templateCacheNamespace = null;
+    private bool $templateCacheEnabled = true;
     private array $factories = [];
     private bool $rendering = false;
     private \SplObjectStorage $active;
@@ -56,13 +58,14 @@ class URPC extends Controller implements IURPCRenderer
         $this->sourceNamespace = $namespace;
         return $this;
     }
-    /** Enable persistent caching for a public template, or pass null to disable it. */
+    /** Override the source namespace for caching, or pass null to disable caching. */
     public function setTemplateCacheNamespace(?string $namespace): self
     {
         if ($namespace !== null && trim($namespace) === '') {
             throw new \InvalidArgumentException('Template cache namespace must not be empty.');
         }
         $this->templateCacheNamespace = $namespace;
+        $this->templateCacheEnabled = $namespace !== null;
         return $this;
     }
     /** Optional factory configuration for processors with constructor dependencies. */
@@ -86,31 +89,49 @@ class URPC extends Controller implements IURPCRenderer
         $this->rendering = true;
         $this->active = new \SplObjectStorage();
         try {
-            // Work on a separate tree: repeated rendering must not rehash editor/dynamic changes.
-            $source = $this->document;
-            if ($source === null) {
-                $context = $this->getContext();
-                if ($context === null) {
-                    throw new \LogicException('A document provider requires an AWT Context.');
-                }
-                $source = $this->documentProvider->createDocument($context);
-            }
-            $working = $this->prepareDocument($this->copyDocument($source));
-            (new BlockIdentity())->assignDocument($working, $this->sourceNamespace);
+            $working = $this->workingDocument();
             $this->renderedDocument = $working;
             $event = new BeforeRenderEvent($working, $this);
             $eventDispatcher->dispatch($event);
             $this->renderedDocument = $event->getDocument();
-            $sections = $this->renderedDocument->getSections();
-            if ($this->templateCacheNamespace !== null) {
-                return TemplateCache::remember(
-                    $this->templateCacheNamespace,
-                    $sections,
-                    fn (): string => $this->renderSections($sections)
-                );
-            }
-            return $this->renderSections($sections);
+            return $this->renderSections($this->renderedDocument->getSections());
         } finally { $this->rendering = false; }
+    }
+
+    private function workingDocument(): IURPCDocument
+    {
+        if ($this->document !== null) {
+            return $this->prepareSource($this->document);
+        }
+
+        $context = $this->getContext();
+        if ($context === null) {
+            throw new \LogicException('A document provider requires an AWT Context.');
+        }
+
+        $provider = $this->documentProvider;
+        $build = fn (): IURPCDocument => $this->prepareSource($provider->createDocument($context));
+        $namespace = $this->templateCacheNamespace ?? $this->sourceNamespace;
+        if (!$this->templateCacheEnabled || $namespace === '' || !$provider instanceof ICacheableURPCDocumentProvider
+            || !TemplateCache::isAvailable()
+            || (new \ReflectionMethod($this, 'prepareDocument'))->getDeclaringClass()->getName() !== self::class) {
+            return $build();
+        }
+
+        $revision = $provider->getDocumentCacheRevision($context);
+        if ($revision === null) {
+            return $build();
+        }
+
+        return TemplateCache::remember($namespace, [$provider::class, $this->sourceNamespace, $revision], $build);
+    }
+
+    private function prepareSource(IURPCDocument $source): IURPCDocument
+    {
+        // Listeners and processors mutate the working tree after IDs are assigned.
+        $working = $this->prepareDocument($this->copyDocument($source));
+        (new BlockIdentity())->assignDocument($working, $this->sourceNamespace);
+        return $working;
     }
 
     private function renderSections(array $sections): string

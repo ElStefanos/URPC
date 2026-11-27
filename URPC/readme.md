@@ -56,17 +56,21 @@ Content is always plain text, emitted before children. Text and attribute values
 
 ### VFS template cache
 
-For a public static template, enable the cache on the controller before rendering.
+For a static document, use a revision-aware provider and the controller's source namespace. URPC's JSON document provider calculates the revision from its section names, source keys, and file contents.
 
 ```php
-$urpc->setTemplateCacheNamespace('MyTheme/pages/about');
+$urpc->setContext($context);
+$urpc->setSourceNamespace('MyTheme/pages/about');
+$urpc->setDocumentProvider(new \URPC\service\loader\JsonDocumentProvider([
+    'main' => new \URPC\service\loader\JsonFileProvider(__DIR__ . '/about.json', 'MyTheme/about'),
+]));
 ```
 
-Use a stable, distinct namespace for each template. AWT VFS stores one generated markup entry per namespace in the `urpc-templates` cache pool. This is URPC's output before any downstream Blade processing. The template cache namespace is independent of the source namespace used for block IDs. Pass `null` to disable caching.
+AWT VFS stores the static tree with assigned block IDs in `awt_data/storage/framework/cache/urpc-templates/`. A hit hydrates a fresh working tree and skips document construction and ID generation. Before-render listeners and dynamic block processors still run on every request. Changing the source revision rebuilds the tree. AWT's `cache clear` also clears this pool.
 
-The provider, document preparation, and `BeforeRenderEvent` still run on every render. Changes to emitted tags, attributes, text, or block order cause URPC to regenerate the cached template. Documents that contain block processors render on every request. Enable this cache only for public markup, since provider or listener output can also contain request-specific values. If VFS storage is unavailable, URPC generates the template directly. AWT's `cache clear` also clears this pool.
+Custom static providers can implement `ICacheableURPCDocumentProvider` and return a revision that changes whenever any input to the static tree changes. Use the built-in document, block, and descriptor types with scalar or array metadata. Populate request-specific values in before-render listeners or block processors. Direct documents, ordinary providers, and controllers with a custom `prepareDocument()` hook use the normal per-request pipeline. Use `setTemplateCacheNamespace('MyTheme/pages/about')` to override the cache namespace, or pass `null` to disable caching.
 
-After saving a template change, dispatch `InvalidateTemplateCacheEvent` through the shared AWT event dispatcher with the same namespace used to enable caching.
+To force a rebuild, dispatch `InvalidateTemplateCacheEvent` through the shared AWT event dispatcher with the source namespace or the configured cache namespace.
 
 ```php
 $eventDispatcher->dispatch(new \URPC\api\events\InvalidateTemplateCacheEvent('MyTheme/pages/about'));
@@ -80,13 +84,13 @@ Before dispatch, URPC assigns every source block an MD5 ID from its complete nor
 
 The counter distinguishes identical structures within the same namespace. Adding a different structure does not shift their IDs. Adding/reordering identical structures can change which occurrence an editor override targets; identical occurrences have no persistent identity beyond their order. MD5 is used for fast non-security identification, not authorization or integrity validation.
 
-The final document is the authoritative ID scope: load() assigns preliminary IDs, and render() recomputes IDs across all sections before the event. Overrides should be associated with IDs seen in the event, particularly when combining repeated sources. Adding repeated blocks preserves both instances using temporary collection keys until preparation assigns distinct IDs. Use replaceBlock() for an explicit editor override. Occurrence counters distinguish repeated sources within the final document.
+The final document is the authoritative ID scope. The loader assigns preliminary IDs, and URPC assigns document-wide IDs before the event when building the tree. A cached tree carries those same document-wide IDs. Overrides should be associated with IDs seen in the event, particularly when combining repeated sources. Adding repeated blocks preserves both instances using temporary collection keys until preparation assigns distinct IDs. Use replaceBlock() for an explicit editor override. Occurrence counters distinguish repeated sources within the final document.
 
 URPC renders a deep copy of the source block tree. Repeated renders start from the source and rerun the event/processors. `getDocument()` exposes the last working document; `setDocument()` replaces the source. Overrides keep the source UID. `replaceBlock()` rejects a replacement with a different UID. Custom metadata objects inside props should be immutable; normal file-loaded props are arrays/scalars.
 
 ## Before-render event
 
-1. Copy source document and assign/rekey all source block IDs.
+1. Load the cached working tree or copy the source document and assign/rekey all source block IDs.
 2. Dispatch `urpc.before_render` using global `$eventDispatcher`.
 3. Adopt `$event->getDocument()` after all listeners finish.
 4. Process dynamic blocks and render HTML recursively.
@@ -151,7 +155,7 @@ The integration package publishes/resolves that provider through AWT shared reso
 and injects it using `$urpc->setDocumentProvider($provider)`. URPC does not resolve
 shared resources itself or know the implementing package or theme engine.
 
-The provider is called once on every render that has no directly supplied document.
+The provider builds the tree when there is no directly supplied document or valid cached tree.
 It should return a fresh request-specific document. AWT context must be set when
 using a provider; otherwise rendering throws an explicit LogicException. Direct
 `setDocument()` takes precedence and needs no context. `clearDocument()` removes
@@ -165,6 +169,6 @@ without PHP customization can use the provider-defined layout unchanged. Provide
 should set source keys for their blocks; setSourceNamespace() supplies a fallback
 for manually added blocks. Changes in this hook become part of source identities.
 
-Final order: direct document or provider → working copy → prepareDocument hook →
-IDs → before-render event → dynamic processors → HTML. See
+On a cache miss, URPC makes a working copy, runs `prepareDocument()`, and assigns IDs.
+Every render then runs the before-render event and dynamic processors before generating HTML. See
 examples/DocumentProvider.php and examples/CustomController.php.
