@@ -24,6 +24,7 @@ class URPC extends Controller implements IURPCRenderer
     private ?IURPCDocumentProvider $documentProvider = null;
     private ?IURPCDocument $renderedDocument = null;
     private string $sourceNamespace = '';
+    private ?string $templateCacheNamespace = null;
     private array $factories = [];
     private bool $rendering = false;
     private \SplObjectStorage $active;
@@ -53,6 +54,15 @@ class URPC extends Controller implements IURPCRenderer
     {
         if (trim($namespace) === '') { throw new \InvalidArgumentException('Namespace must not be empty.'); }
         $this->sourceNamespace = $namespace;
+        return $this;
+    }
+    /** Enable persistent caching for a public template, or pass null to disable it. */
+    public function setTemplateCacheNamespace(?string $namespace): self
+    {
+        if ($namespace !== null && trim($namespace) === '') {
+            throw new \InvalidArgumentException('Template cache namespace must not be empty.');
+        }
+        $this->templateCacheNamespace = $namespace;
         return $this;
     }
     /** Optional factory configuration for processors with constructor dependencies. */
@@ -91,13 +101,27 @@ class URPC extends Controller implements IURPCRenderer
             $event = new BeforeRenderEvent($working, $this);
             $eventDispatcher->dispatch($event);
             $this->renderedDocument = $event->getDocument();
-            $html = '';
-            foreach ($this->renderedDocument->getSections() as $blocks) {
-                foreach ($blocks as $block) { $html .= $this->renderBlock($block); }
+            $sections = $this->renderedDocument->getSections();
+            if ($this->templateCacheNamespace !== null) {
+                return TemplateCache::remember(
+                    $this->templateCacheNamespace,
+                    $sections,
+                    fn (): string => $this->renderSections($sections)
+                );
             }
-            return $html;
+            return $this->renderSections($sections);
         } finally { $this->rendering = false; }
     }
+
+    private function renderSections(array $sections): string
+    {
+        $html = '';
+        foreach ($sections as $blocks) {
+            foreach ($blocks as $block) { $html .= $this->renderBlock($block); }
+        }
+        return $html;
+    }
+
     private function renderBlock(IURPCBlock $block, int $depth = 0): string
     {
         if ($depth > 128) { throw new \LogicException('Maximum rendered block depth exceeded.'); }
