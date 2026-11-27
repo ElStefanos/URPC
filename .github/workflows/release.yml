@@ -1,65 +1,218 @@
-name: URPC release
+# Save as .github/workflows/release.yml. The checkout must contain one tracked
+# <package-directory>/manifest.json. Its name determines the title and ZIP name.
+name: Release
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_mode:
+        description: Version source, or rerelease to replace the latest release ZIP
+        required: true
+        type: choice
+        default: manifest
+        options:
+          - manifest
+          - major
+          - minor
+          - patch
+          - manual
+          - rerelease
+      manual_version:
+        description: Version to use in manual mode (for example, 1.2.3)
+        type: string
+      notify_rerelease:
+        description: Send a release.edited webhook after replacing the ZIP
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 concurrency:
-  group: urpc-release
+  group: package-release
   cancel-in-progress: false
 
 jobs:
   release:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository and tags
-        uses: actions/checkout@v5
+      - name: Check out the default branch
+        uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
-      - name: Calculate next version
+      - name: Resolve and update the package version
         id: version
-        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_MODE: ${{ inputs.version_mode }}
+          MANUAL_VERSION: ${{ inputs.manual_version }}
         run: |
+          if [[ "$VERSION_MODE" == rerelease ]]; then
+            LATEST_RELEASE=$(gh release view --json tagName,isImmutable)
+            if [[ "$(jq -r .isImmutable <<< "$LATEST_RELEASE")" == true ]]; then
+              echo "::error::The latest release is immutable and its ZIP cannot be replaced."
+              exit 1
+            fi
+            LATEST_VERSION=$(jq -er .tagName <<< "$LATEST_RELEASE")
+            export LATEST_VERSION
+          fi
+
+          python3 - <<'PY'
+          import json
           import os
           import re
           import subprocess
+          from pathlib import Path
 
-          tags = subprocess.check_output(
-              ["git", "tag", "--list"],
-              text=True
-          ).splitlines()
+          version_pattern = re.compile(
+              r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+              r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+          )
 
-          patches = [
-              int(match.group(1))
-              for tag in tags
-              if (match := re.fullmatch(r"1\.0\.(\d+)", tag))
+          def parse_version(version):
+              match = version_pattern.fullmatch(version) if isinstance(version, str) else None
+              if match is None:
+                  raise SystemExit("Use a version like 1.2.3 or 1.2.3-rc.1.")
+              return match
+
+          tracked_files = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+          manifests = [
+              Path(os.fsdecode(filename))
+              for filename in tracked_files
+              if filename.count(b"/") == 1 and filename.endswith(b"/manifest.json")
           ]
+          if len(manifests) != 1:
+              raise SystemExit("Expected one tracked <package-directory>/manifest.json.")
 
-          version = f"1.0.{max(patches, default=-1) + 1}"
+          manifest_path = manifests[0]
+          package_dir = manifest_path.parent.as_posix()
+          if any(ord(character) < 32 for character in package_dir):
+              raise SystemExit("The package directory must contain no control characters.")
 
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"tag={version}\n")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          package_name = manifest.get("name")
+          if not isinstance(package_name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", package_name):
+              raise SystemExit("The manifest name must start with a letter or digit and use only letters, digits, dots, underscores, or hyphens.")
+          current = manifest["version"]
+          mode = os.environ["VERSION_MODE"]
 
-      - name: Create ZIP without a wrapper folder
-        run: |
-          git archive \
-            --format=zip \
-            --output="$RUNNER_TEMP/URPC.zip" \
-            HEAD:URPC
+          if mode == "manifest":
+              version = current
+          elif mode == "rerelease":
+              version = os.environ["LATEST_VERSION"]
+          elif mode == "manual":
+              version = os.environ["MANUAL_VERSION"].strip()
+          elif mode in {"major", "minor", "patch"}:
+              major, minor, patch = map(int, parse_version(current).groups()[:3])
+              bumps = {
+                  "major": (major + 1, 0, 0),
+                  "minor": (major, minor + 1, 0),
+                  "patch": (major, minor, patch + 1),
+              }
+              version = ".".join(map(str, bumps[mode]))
+          else:
+              raise SystemExit(f"Unknown version mode: {mode}")
 
-      - name: Publish versioned release
+          prerelease = parse_version(version).group(4)
+          if version != current:
+              manifest["version"] = version
+              manifest_path.write_text(
+                  json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              print(f"package_name={package_name}", file=output)
+              print(f"package_dir={package_dir}", file=output)
+              print(f"number={version}", file=output)
+              print(f"prerelease={str(prerelease is not None).lower()}", file=output)
+          PY
+
+      - name: Package and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ steps.version.outputs.tag }}
+          RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+          VERSION_MODE: ${{ inputs.version_mode }}
+          NOTIFY_RERELEASE: ${{ inputs.notify_rerelease }}
+          PACKAGE_NAME: ${{ steps.version.outputs.package_name }}
+          PACKAGE_DIR: ${{ steps.version.outputs.package_dir }}
+          VERSION: ${{ steps.version.outputs.number }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
-          gh release create "$VERSION" \
-            "$RUNNER_TEMP/URPC.zip" \
-            --target "$GITHUB_SHA" \
-            --title "URPC - $VERSION" \
-            --generate-notes
+          set -euo pipefail
+
+          title="$PACKAGE_NAME-$VERSION"
+          manifest_path="./$PACKAGE_DIR/manifest.json"
+          archive="$RUNNER_TEMP/$title.zip"
+
+          if [[ "$VERSION_MODE" == rerelease ]]; then
+            # Stage the archived manifest version on the runner only.
+            git add -- "$manifest_path"
+            git archive --format=zip --output="$archive" "$(git write-tree):$PACKAGE_DIR"
+
+            # Keep a copy in case the replacement upload fails after removing the old ZIP.
+            assets=$(gh release view "$VERSION" --json assets --jq '.assets[].name')
+            if grep -Fxq -- "$title.zip" <<< "$assets"; then
+              backup=$(mktemp -d "$RUNNER_TEMP/package-release-backup.XXXXXX")
+              gh release download "$VERSION" --pattern "$title.zip" --dir "$backup"
+              if ! gh release upload "$VERSION" "$archive" --clobber; then
+                gh release upload "$VERSION" "$backup/$title.zip" || true
+                exit 1
+              fi
+            else
+              gh release upload "$VERSION" "$archive"
+            fi
+
+            if [[ "$NOTIFY_RERELEASE" == true ]]; then
+              notes="$RUNNER_TEMP/rerelease-notes.md"
+              run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+              marker="<!-- package-rerelease: $run_url -->"
+              gh release view "$VERSION" --json body | jq -r --arg marker "$marker" '
+                (.body // "" | split("\n") | map(select(startswith("<!-- package-rerelease: ") | not)) | join("\n")) as $body
+                | $marker + "\n" + $body
+              ' > "$notes"
+              gh release edit "$VERSION" --notes-file "$notes"
+            fi
+            exit 0
+          fi
+
+          tag="refs/tags/$VERSION"
+          branch="refs/heads/$RELEASE_BRANCH"
+          push_refs=()
+
+          if ! git diff --quiet -- "$manifest_path"; then
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit -m "chore: release $title" -- "$manifest_path"
+            push_refs+=("HEAD:$branch")
+          fi
+
+          if git show-ref --verify --quiet "$tag"; then
+            if [[ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+              echo "::error::Tag $VERSION already points to another commit."
+              exit 1
+            fi
+          else
+            push_refs+=("HEAD:$tag")
+          fi
+
+          # Archive the package tree itself so manifest.json is at the ZIP root.
+          git archive --format=zip --output="$archive" "HEAD:$PACKAGE_DIR"
+          if (( ${#push_refs[@]} )); then
+            git push --atomic origin "${push_refs[@]}"
+          fi
+
+          if is_draft=$(gh release view "$VERSION" --json isDraft --jq '.isDraft'); then
+            if [[ "$is_draft" != true ]]; then
+              echo "::error::Release $VERSION is already published."
+              exit 1
+            fi
+            gh release upload "$VERSION" "$archive" --clobber
+            gh release edit "$VERSION" --draft=false --prerelease="$PRERELEASE"
+          else
+            gh release create "$VERSION" "$archive" --verify-tag \
+              --title "$title" --generate-notes --prerelease="$PRERELEASE"
+          fi

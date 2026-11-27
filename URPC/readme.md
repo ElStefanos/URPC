@@ -54,6 +54,26 @@ Sections are ordered groups, not implicit HTML wrappers. Other packages add bloc
 
 Content is always plain text, emitted before children. Text and attribute values are escaped; boolean true attributes are emitted without a value, false/null attributes are omitted. Other attribute values must be scalar. Void elements such as img/br/input cannot contain content or children. Nonempty script/style content is rejected because these elements cannot represent escaped plain text normally; an empty external script element can use a src attribute. Escaping is not an HTML sanitizer: trusted packages still select element names, attribute names and URL values.
 
+### VFS template cache
+
+For a public static template, enable the cache on the controller before rendering.
+
+```php
+$urpc->setTemplateCacheNamespace('MyTheme/pages/about');
+```
+
+Use a stable, distinct namespace for each template. AWT VFS stores one generated markup entry per namespace in the `urpc-templates` cache pool. This is URPC's output before any downstream Blade processing. The template cache namespace is independent of the source namespace used for block IDs. Pass `null` to disable caching.
+
+The provider, document preparation, and `BeforeRenderEvent` still run on every render. Changes to emitted tags, attributes, text, or block order cause URPC to regenerate the cached template. Documents that contain block processors render on every request. Enable this cache only for public markup, since provider or listener output can also contain request-specific values. If VFS storage is unavailable, URPC generates the template directly. AWT's `cache clear` also clears this pool.
+
+After saving a template change, dispatch `InvalidateTemplateCacheEvent` through the shared AWT event dispatcher with the same namespace used to enable caching.
+
+```php
+$eventDispatcher->dispatch(new \URPC\api\events\InvalidateTemplateCacheEvent('MyTheme/pages/about'));
+```
+
+URPC registers the listener when its package starts. The event removes the entry immediately. An already absent entry is treated as successfully invalidated, and the next eligible render rebuilds it.
+
 ## Identity and overrides
 
 Before dispatch, URPC assigns every source block an MD5 ID from its complete normalized structure, explicit source namespace and occurrence counter. IDs and generated HTML are excluded from hashing. Object-property ordering and whitespace outside JSON strings do not affect IDs. Child order, text, attributes, processor class and props are significant. Complete structure includes descendants, so changing a child changes ancestor IDs.
