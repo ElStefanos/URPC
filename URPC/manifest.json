@@ -7,8 +7,8 @@
   "type": 1,
   "system_package": 1,
   "description": "URPC (Universal Rendering Pipeline Controller) defines shared block formats, rendering rules, and contracts for CMS packages. These standards apply only to public-facing output, leaving each package free to implement its own administration interface and workflows.",
-  "icon": "/data/icon/icon.png",
-  "preview_image": "/data/preview/image.png",
+  "icon": "data/icon/icon.png",
+  "preview_image": "data/preview/image.png",
   "license": "MIT",
   "license_url": "https://github.com/ElStefanos/URPC/blob/master/LICENSE",
   "dependencies": []
